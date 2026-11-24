@@ -6,7 +6,7 @@
     "enabled": true,
     "rules": {
       "preset": "recommended",
-      "suspicious": { "noExplicitAny": "off" },
+      "suspicious": { "noExplicitAny": "off", "noThenProperty": "off" },
       "style": { "noNonNullAssertion": "off" }
     }
   },

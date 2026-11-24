@@ -1,5 +1,7 @@
 import { Router } from "express";
+import { authRouter, webhookRouter } from "./modules/auth/auth.routes";
 
 export const apiRouter = Router();
 
-// Module routers are registered here as they are implemented.
+apiRouter.use("/auth", authRouter);
+apiRouter.use("/webhooks", webhookRouter);

@@ -31,6 +31,7 @@
   },
   "homepage": "https://github.com/TahsanX/Assignment6#readme",
   "dependencies": {
+    "@clerk/backend": "^3.33.0",
     "@clerk/express": "^2.1.98",
     "@prisma/client": "^6.19.3",
     "@upstash/ratelimit": "^2.2.2",
@@ -47,8 +48,7 @@
     "morgan": "^1.12.1",
     "multer": "^2.5.0",
     "resend": "^6.39.0",
-    "stripe": "^23.2.0",
-    "svix": "^2.11.1"
+    "stripe": "^23.2.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.9",
