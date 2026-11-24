@@ -9,7 +9,6 @@ export const authRouter = Router();
 
 authRouter.use(authLimiter);
 authRouter.post("/onboard", authenticate, validate(onboardSchema), controller.onboard);
-authRouter.get("/me", authenticate, controller.me);
 authRouter.post("/refresh-token", controller.refresh);
 authRouter.post("/logout", authenticate, controller.logout);
 

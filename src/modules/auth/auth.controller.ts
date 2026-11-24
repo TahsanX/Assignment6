@@ -10,11 +10,6 @@ export const onboard = catchAsync(async (req, res) => {
   sendResponse(res, { statusCode: 201, message: "Onboarding completed", data });
 });
 
-export const me = catchAsync(async (req, res) => {
-  const data = await service.getMe(req.user!.id);
-  sendResponse(res, { message: "Current user fetched", data });
-});
-
 export const refresh = catchAsync(async (req, res) => {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) throw ApiError.unauthorized("Missing Bearer token");
