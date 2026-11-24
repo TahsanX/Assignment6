@@ -7,6 +7,7 @@ import {
   assessmentInvitationsRouter,
   invitationsRouter,
 } from "./modules/invitations/invitations.routes";
+import { paymentsRouter } from "./modules/payments/payments.routes";
 import { problemsRouter } from "./modules/problems/problems.routes";
 import { reportsRouter } from "./modules/reports/reports.routes";
 import { usersRouter } from "./modules/users/users.routes";
@@ -24,3 +25,4 @@ apiRouter.use("/assessments/:id/attempts", assessmentAttemptsRouter);
 apiRouter.use("/assessments", assessmentsRouter);
 apiRouter.use("/attempts", attemptsRouter);
 apiRouter.use("/invitations", invitationsRouter);
+apiRouter.use("/payments", paymentsRouter);
