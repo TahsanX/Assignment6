@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { adminRouter, publicRouter } from "./modules/admin/admin.routes";
 import { assessmentsRouter } from "./modules/assessments/assessments.routes";
 import { assessmentAttemptsRouter, attemptsRouter } from "./modules/attempts/attempts.routes";
 import { authRouter, webhookRouter } from "./modules/auth/auth.routes";
@@ -28,3 +29,5 @@ apiRouter.use("/attempts", attemptsRouter);
 apiRouter.use("/invitations", invitationsRouter);
 apiRouter.use("/payments", paymentsRouter);
 apiRouter.use("/notifications", notificationsRouter);
+apiRouter.use("/admin", adminRouter);
+apiRouter.use("/public", publicRouter);
