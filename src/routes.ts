@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { assessmentsRouter } from "./modules/assessments/assessments.routes";
 import { authRouter, webhookRouter } from "./modules/auth/auth.routes";
+import {
+  assessmentInvitationsRouter,
+  invitationsRouter,
+} from "./modules/invitations/invitations.routes";
 import { problemsRouter } from "./modules/problems/problems.routes";
 import { usersRouter } from "./modules/users/users.routes";
 
@@ -10,4 +14,6 @@ apiRouter.use("/auth", authRouter);
 apiRouter.use("/webhooks", webhookRouter);
 apiRouter.use("/users", usersRouter);
 apiRouter.use("/problems", problemsRouter);
+apiRouter.use("/assessments/:id/invitations", assessmentInvitationsRouter);
 apiRouter.use("/assessments", assessmentsRouter);
+apiRouter.use("/invitations", invitationsRouter);
