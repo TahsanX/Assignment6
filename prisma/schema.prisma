@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  COMPANY
+  CANDIDATE
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum ProblemType {
+  MCQ
+  WRITTEN
+  CODING
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model User {
+  id          String     @id @default(uuid())
+  clerkId     String     @unique
+  email       String     @unique
+  name        String
+  role        Role?
+  status      UserStatus @default(ACTIVE)
+  onboarded   Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  companyProfile   CompanyProfile?
+  candidateProfile CandidateProfile?
+  problems         Problem[]
+  assessments      Assessment[]
+  attempts         Attempt[]
+  payments         Payment[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  invitations      Invitation[]
+
+  @@index([role, status])
+  @@index([deletedAt])
+}
+
+model CompanyProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  companyName String
+  website     String?
+  description String?
+  logoUrl     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CandidateProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  headline  String?
+  skills    String[]
+  github    String?
+  resumeUrl String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Problem {
+  id            String      @id @default(uuid())
+  companyId     String
+  type          ProblemType
+  title         String
+  body          String
+  difficulty    Difficulty  @default(MEDIUM)
+  tags          String[]
+  points        Int         @default(10)
+  options       Json? // MCQ: [{ id, text }]
+  correctAnswer Json? // MCQ: array of option ids
+  testCases     Json? // CODING: rubric / sample test cases
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+
+  company     User                @relation(fields: [companyId], references: [id])
+  assessments AssessmentProblem[]
+  answers     Answer[]
+
+  @@index([companyId, type, difficulty])
+  @@index([tags], type: Gin)
+  @@index([deletedAt])
+}
