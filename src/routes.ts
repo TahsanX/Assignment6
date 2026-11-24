@@ -7,6 +7,7 @@ import {
   assessmentInvitationsRouter,
   invitationsRouter,
 } from "./modules/invitations/invitations.routes";
+import { notificationsRouter } from "./modules/notifications/notifications.routes";
 import { paymentsRouter } from "./modules/payments/payments.routes";
 import { problemsRouter } from "./modules/problems/problems.routes";
 import { reportsRouter } from "./modules/reports/reports.routes";
@@ -26,3 +27,4 @@ apiRouter.use("/assessments", assessmentsRouter);
 apiRouter.use("/attempts", attemptsRouter);
 apiRouter.use("/invitations", invitationsRouter);
 apiRouter.use("/payments", paymentsRouter);
+apiRouter.use("/notifications", notificationsRouter);
