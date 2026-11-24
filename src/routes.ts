@@ -8,6 +8,7 @@ import {
   invitationsRouter,
 } from "./modules/invitations/invitations.routes";
 import { problemsRouter } from "./modules/problems/problems.routes";
+import { reportsRouter } from "./modules/reports/reports.routes";
 import { usersRouter } from "./modules/users/users.routes";
 
 export const apiRouter = Router();
@@ -17,6 +18,7 @@ apiRouter.use("/webhooks", webhookRouter);
 apiRouter.use("/users", usersRouter);
 apiRouter.use("/problems", problemsRouter);
 apiRouter.use(evaluationRouter);
+apiRouter.use(reportsRouter);
 apiRouter.use("/assessments/:id/invitations", assessmentInvitationsRouter);
 apiRouter.use("/assessments/:id/attempts", assessmentAttemptsRouter);
 apiRouter.use("/assessments", assessmentsRouter);

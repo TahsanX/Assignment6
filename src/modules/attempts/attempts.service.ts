@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import type { Request } from "express";
 import { resultEmail, sendEmail } from "../../lib/mailer";
 import { prisma } from "../../lib/prisma";
+import { cache } from "../../lib/redis";
 import { ApiError } from "../../utils/ApiError";
 import { buildMeta, getPagination } from "../../utils/pagination";
 import { seededShuffle } from "../../utils/shuffle";
@@ -66,7 +67,10 @@ export const finalizeInProgress = async (attemptId: string, timedOut: boolean) =
       submittedAt: timedOut ? a.deadlineAt : new Date(),
     });
   });
-  if (result) await notifyResult(attemptId);
+  if (result) {
+    await cache.delByPrefix(`report:${result.assessmentId}`);
+    await notifyResult(attemptId);
+  }
   return result;
 };
 
