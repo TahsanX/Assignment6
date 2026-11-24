@@ -181,11 +181,11 @@ CREATE TABLE "Payment" (
     "companyId" TEXT NOT NULL,
     "assessmentId" TEXT NOT NULL,
     "amount" DECIMAL(12,2) NOT NULL,
-    "currency" TEXT NOT NULL DEFAULT 'BDT',
+    "currency" TEXT NOT NULL DEFAULT 'usd',
     "status" "PaymentStatus" NOT NULL DEFAULT 'INITIATED',
     "invoiceNumber" TEXT NOT NULL,
-    "bkashPaymentId" TEXT,
-    "trxId" TEXT,
+    "stripeSessionId" TEXT,
+    "paymentIntentId" TEXT,
     "payerReference" TEXT,
     "statusMessage" TEXT,
     "rawResponse" JSONB,
@@ -294,7 +294,7 @@ CREATE UNIQUE INDEX "Answer_attemptId_problemId_key" ON "Answer"("attemptId", "p
 CREATE UNIQUE INDEX "Payment_invoiceNumber_key" ON "Payment"("invoiceNumber");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Payment_bkashPaymentId_key" ON "Payment"("bkashPaymentId");
+CREATE UNIQUE INDEX "Payment_stripeSessionId_key" ON "Payment"("stripeSessionId");
 
 -- CreateIndex
 CREATE INDEX "Payment_companyId_status_idx" ON "Payment"("companyId", "status");

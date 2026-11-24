@@ -245,21 +245,21 @@ model Answer {
 }
 
 model Payment {
-  id             String        @id @default(uuid())
-  companyId      String
-  assessmentId   String
-  amount         Decimal       @db.Decimal(12, 2)
-  currency       String        @default("BDT")
-  status         PaymentStatus @default(INITIATED)
-  invoiceNumber  String        @unique
-  bkashPaymentId String?       @unique
-  trxId          String?
-  payerReference String?
-  statusMessage  String?
-  rawResponse    Json?
-  paidAt         DateTime?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id              String        @id @default(uuid())
+  companyId       String
+  assessmentId    String
+  amount          Decimal       @db.Decimal(12, 2)
+  currency        String        @default("usd")
+  status          PaymentStatus @default(INITIATED)
+  invoiceNumber   String        @unique
+  stripeSessionId String?       @unique
+  paymentIntentId String?
+  payerReference  String?
+  statusMessage   String?
+  rawResponse     Json?
+  paidAt          DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   company    User       @relation(fields: [companyId], references: [id])
   assessment Assessment @relation(fields: [assessmentId], references: [id])
