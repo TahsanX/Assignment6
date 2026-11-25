@@ -50,7 +50,7 @@
       "value": ""
     },
     {
-      "key": "sessionId",
+      "key": "bkashPaymentId",
       "value": ""
     },
     {
@@ -1610,9 +1610,10 @@
       "name": "Payments",
       "item": [
         {
-          "name": "Initiate Stripe checkout",
+          "name": "Initiate bKash payment",
           "request": {
             "method": "POST",
+            "description": "Returns checkoutUrl (bKash hosted page). Open it, pay with a sandbox wallet.",
             "header": [
               {
                 "key": "Content-Type",
@@ -1642,12 +1643,13 @@
           }
         },
         {
-          "name": "Success redirect (verifies with Stripe)",
+          "name": "bKash callback (called by bKash redirect)",
           "request": {
             "method": "GET",
+            "description": "bKash redirects the customer here. The server executes the payment with bKash and verifies it.",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/payments/success?session_id={{sessionId}}",
+              "raw": "{{baseUrl}}/api/v1/payments/bkash/callback?paymentID={{bkashPaymentId}}&status=success",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1655,67 +1657,18 @@
                 "api",
                 "v1",
                 "payments",
-                "success"
+                "bkash",
+                "callback"
               ],
               "query": [
                 {
-                  "key": "session_id",
-                  "value": "{{sessionId}}"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Cancel redirect",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/payments/cancel?payment_id={{paymentId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "payments",
-                "cancel"
-              ],
-              "query": [
+                  "key": "paymentID",
+                  "value": "{{bkashPaymentId}}"
+                },
                 {
-                  "key": "payment_id",
-                  "value": "{{paymentId}}"
+                  "key": "status",
+                  "value": "success"
                 }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Stripe webhook (signed)",
-          "request": {
-            "method": "POST",
-            "description": "Called by Stripe with Stripe-Signature header.",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/payments/webhook",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "payments",
-                "webhook"
               ]
             }
           }
@@ -1782,7 +1735,7 @@
           }
         },
         {
-          "name": "Re-sync payment with Stripe",
+          "name": "Re-sync payment with bKash",
           "request": {
             "method": "POST",
             "header": [

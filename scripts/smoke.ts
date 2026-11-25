@@ -4,8 +4,8 @@
  *   BASE_URL=http://localhost:5000 npx tsx scripts/smoke.ts
  *
  * Requirements: seeded database (npm run db:seed), Clerk keys, and a running server.
- * The single manual step is paying the Stripe test checkout (card 4242 4242 4242 4242);
- * the script prints the URL and then polls until the payment settles.
+ * The single manual step is paying the bKash sandbox checkout (test wallet + OTP + PIN from the
+ * bKash sandbox docs); the script prints the URL and then polls until the payment settles.
  * Test data is intentionally left in place (no cleanup).
  */
 import dotenv from "dotenv";
@@ -273,7 +273,7 @@ async function main() {
       409,
   );
 
-  section("Payment (Stripe test mode)");
+  section("Payment (bKash sandbox)");
   const pay = await call("POST", "/payments/initiate", company, { assessmentId: aid });
   check("initiate payment", pay.status === 201 && !!pay.json?.data?.checkoutUrl, pay.json);
   const paymentId = pay.json?.data?.paymentId as string;
@@ -284,7 +284,7 @@ async function main() {
     (await call("POST", "/payments/initiate", candA, { assessmentId: aid })).status === 403,
   );
   console.log(
-    `\n  >>> Pay here with card 4242 4242 4242 4242:\n  ${pay.json?.data?.checkoutUrl}\n`,
+    `\n  >>> Open this bKash sandbox URL and complete the payment:\n  ${pay.json?.data?.checkoutUrl}\n`,
   );
   let status = "PENDING";
   for (let i = 0; i < 100 && status !== "COMPLETED"; i++) {
@@ -300,8 +300,9 @@ async function main() {
     (await call("GET", `/payments/${paymentId}`, otherCompany)).status === 404,
   );
   check(
-    "webhook without signature -> 400",
-    (await call("POST", "/payments/webhook", undefined, { type: "x" })).status === 400,
+    "callback with unknown paymentID -> 404",
+    (await call("GET", "/payments/bkash/callback?paymentID=TR0000000000&status=success")).status ===
+      404,
   );
   const published = await call("GET", `/assessments/${aid}`, company);
   check(
