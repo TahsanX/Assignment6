@@ -17,7 +17,7 @@ Admin Password  : <demo password set via ADMIN_PASSWORD at seed time>
 ## Stack
 
 Node.js · TypeScript · Express · PostgreSQL (Supabase) · Prisma · Joi · Biome · Clerk (email/password +
-Google) · Upstash Redis · Resend · Multer + Cloudinary · bKash (Tokenized Checkout, sandbox).
+Google) · Upstash Redis · Resend · Multer + Cloudinary · Stripe (Checkout).
 
 ## Architecture (MVC)
 
@@ -29,7 +29,7 @@ Route  ->  Middleware (auth, RBAC, rate limit, Joi validation)  ->  Controller  
 src/
   app.ts, server.ts, routes.ts      app wiring, v1 router
   config/env.ts                     Joi-validated environment
-  lib/                              prisma, redis (fail-open cache), clerk, bkash, cloudinary, mailer
+  lib/                              prisma, redis (fail-open cache), clerk, stripe, cloudinary, mailer
   middlewares/                      auth, authorize, validate, rateLimit, upload, errorHandler
   modules/<name>/                   routes · controller · service · validation
     auth users problems assessments invitations attempts evaluation reports payments notifications admin audit
@@ -52,9 +52,9 @@ Only `COMPANY`/`CANDIDATE` can be chosen at onboarding; `ADMIN` is seeded or gra
 
 1. Company creates problems and an assessment (`DRAFT`), attaches problems.
 2. `POST /assessments/:id/publish-request` → `PENDING_PAYMENT` (price = slots × `PRICE_PER_CANDIDATE_SLOT`).
-3. `POST /payments/initiate` → bKash checkout URL (`checkoutUrl`). After the customer pays, bKash redirects to
-   `/payments/bkash/callback`; the server **executes the payment with bKash and verifies amount, invoice and status**
-   (the redirect query is never trusted). Completion is idempotent and atomically moves the assessment to `PUBLISHED`.
+3. `POST /payments/initiate` → Stripe Checkout URL. Payment is verified by the **signed webhook** (and the
+   success redirect, which re-reads the session from Stripe). Completion is idempotent and atomically
+   moves the assessment to `PUBLISHED`.
 4. Company invites candidates (capped by slots, hashed one-time tokens, emailed via Resend).
 5. Candidate accepts → starts an attempt (row-locked transaction, one active attempt, server-side deadline,
    seeded question shuffle, no answers exposed) → autosaves → submits.
@@ -72,7 +72,7 @@ State machine: `DRAFT → PENDING_PAYMENT → PUBLISHED → CLOSED` (all transit
   sliding-window rate limits (global, auth, attempts, payments, uploads). All Redis calls fail open.
 - **Soft deletes:** users, problems, assessments, invitations. **Audit logs** written in the same transaction as the change.
 - **Security:** Helmet, CORS allow-list, Bearer JWT (Clerk), role middleware, Joi validation on every body/query/param,
-  CSV formula-injection guard, bKash execute-and-verify settlement, Clerk webhook signature verification, hashed invitation tokens.
+  CSV formula-injection guard, Stripe/Clerk webhook signature verification, hashed invitation tokens.
 - **Response format:** `{ success, message, data[, meta] }` / `{ success:false, message, errors[] }`.
 
 ## API overview (`/api/v1`)
@@ -87,7 +87,7 @@ State machine: `DRAFT → PENDING_PAYMENT → PUBLISHED → CLOSED` (all transit
 | Attempts | `POST /assessments/:id/attempts` · `GET /attempts/:id` · `PUT /attempts/:id/answers/:problemId` · `POST /attempts/:id/events` · `POST /attempts/:id/submit` · `GET /attempts/mine` · `GET /attempts/:id/result` |
 | Evaluation | `GET /assessments/:id/submissions` · `GET /submissions/:attemptId` · `PATCH /answers/:id/evaluate` · `POST /submissions/:attemptId/finalize` · `POST /assessments/:id/release-results` |
 | Reports | `GET /assessments/:id/report` · `GET /assessments/:id/report/export` (CSV) |
-| Payments | `POST /payments/initiate` · `GET /payments/bkash/callback` · `GET /payments` · `GET /payments/:id` · `POST /payments/:id/refresh` |
+| Payments | `POST /payments/initiate` · `POST /payments/webhook` · `GET /payments/success` · `GET /payments/cancel` · `GET /payments` · `GET /payments/:id` · `POST /payments/:id/refresh` |
 | Notifications | `GET /notifications` · `PATCH /notifications/:id/read` |
 | Admin | `GET /admin/users` · `PATCH /admin/users/:id/{role,status}` · `GET /admin/assessments` · `PATCH /admin/assessments/:id/moderate` · `GET /admin/payments` · `GET /admin/dashboard-stats` · `GET /admin/audit-logs` |
 | Public | `GET /health` · `GET /api/v1/public/stats` |
@@ -114,13 +114,13 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:5000/api/v1/users/me
 BASE_URL=http://localhost:5000 npm run smoke                           # all roles end to end
 ```
 
-bKash sandbox: put the sandbox `BKASH_*` credentials in `.env`; the initiate response returns `checkoutUrl`. Open it and pay with a
-sandbox wallet number (see the bKash developer docs). bKash redirects back to `APP_URL/api/v1/payments/bkash/callback`, so locally
-`APP_URL=http://localhost:5000` works because the redirect happens in your browser.
+Stripe: use test keys, card `4242 4242 4242 4242`. For webhooks run
+`stripe listen --forward-to localhost:5000/api/v1/payments/webhook` and set `STRIPE_WEBHOOK_SECRET`
+(or point a Stripe dashboard endpoint at `<live-url>/api/v1/payments/webhook`).
 Clerk webhook (optional user sync): `<live-url>/api/v1/webhooks/clerk`.
 
 ## Deployment
 
 - **Render:** `render.yaml` (build runs `prisma migrate deploy`). **Vercel:** `vercel.json` + `api/index.ts`.
 - Use Supabase's pooled connection (port 6543, `pgbouncer=true`) for `DATABASE_URL` and the direct one for `DIRECT_URL`.
-- Set `APP_URL` to the public API URL (used for the bKash callback URL) and every variable from `.env.example`.
+- Set `APP_URL` to the public API URL (used for Stripe redirect URLs) and every variable from `.env.example`.

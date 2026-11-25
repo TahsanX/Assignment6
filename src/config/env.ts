@@ -23,13 +23,10 @@ const schema = Joi.object({
   CLOUDINARY_CLOUD_NAME: str(),
   CLOUDINARY_API_KEY: str(),
   CLOUDINARY_API_SECRET: str(),
-  BKASH_BASE_URL: Joi.string().uri().default("https://tokenized.sandbox.bka.sh/v1.2.0-beta"),
-  BKASH_APP_KEY: str(),
-  BKASH_APP_SECRET: str(),
-  BKASH_USERNAME: str(),
-  BKASH_PASSWORD: str(),
-  PAYMENT_CURRENCY: Joi.string().default("BDT"),
-  PRICE_PER_CANDIDATE_SLOT: Joi.number().positive().default(100),
+  STRIPE_SECRET_KEY: str(),
+  STRIPE_WEBHOOK_SECRET: str(),
+  PAYMENT_CURRENCY: Joi.string().default("usd"),
+  PRICE_PER_CANDIDATE_SLOT: Joi.number().positive().default(2),
   ADMIN_EMAIL: Joi.string().email().default("admin@codeassess.dev"),
   ADMIN_PASSWORD: Joi.string().default("ChangeMe123!"),
 }).unknown(true);
@@ -57,11 +54,8 @@ export const env = value as {
   CLOUDINARY_CLOUD_NAME: string;
   CLOUDINARY_API_KEY: string;
   CLOUDINARY_API_SECRET: string;
-  BKASH_BASE_URL: string;
-  BKASH_APP_KEY: string;
-  BKASH_APP_SECRET: string;
-  BKASH_USERNAME: string;
-  BKASH_PASSWORD: string;
+  STRIPE_SECRET_KEY: string;
+  STRIPE_WEBHOOK_SECRET: string;
   PAYMENT_CURRENCY: string;
   PRICE_PER_CANDIDATE_SLOT: number;
   ADMIN_EMAIL: string;
