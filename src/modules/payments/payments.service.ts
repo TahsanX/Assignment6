@@ -1,17 +1,22 @@
 import crypto from "node:crypto";
 import type { Payment, Prisma } from "@prisma/client";
 import type { Request } from "express";
-import type Stripe from "stripe";
 import { env } from "../../config/env";
+import {
+  type BkashPaymentResponse,
+  createPayment,
+  executePayment,
+  queryPayment,
+} from "../../lib/bkash";
 import { prisma } from "../../lib/prisma";
-import { getStripe } from "../../lib/stripe";
 import { ApiError } from "../../utils/ApiError";
 import { buildMeta, getPagination } from "../../utils/pagination";
 import { priceFor, transitionStatus } from "../assessments/assessments.service";
 import { logAudit } from "../audit/audit.service";
 import { notify } from "../notifications/notifications.service";
 
-const MIN_CHARGE = 0.5; // Stripe minimum for USD
+const MIN_CHARGE = 1; // BDT
+const REUSE_WINDOW_MS = 10 * 60 * 1000; // an open bKash payment is reused for 10 minutes
 
 const publicSelect = {
   id: true,
@@ -20,6 +25,7 @@ const publicSelect = {
   currency: true,
   status: true,
   invoiceNumber: true,
+  trxId: true,
   statusMessage: true,
   paidAt: true,
   createdAt: true,
@@ -28,6 +34,8 @@ const publicSelect = {
 
 const invoiceNo = () =>
   `INV-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
+
+const OPEN_STATES = ["INITIATED", "PENDING"] as const;
 
 /* ------------------------------------------------------------------ */
 /* Initiate                                                             */
@@ -49,19 +57,18 @@ export const initiatePayment = async (companyId: string, assessmentId: string, r
 
   const amount = priceFor(assessment.candidateSlots);
   if (amount < MIN_CHARGE) throw ApiError.badRequest(`Minimum chargeable amount is ${MIN_CHARGE}`);
-  const stripe = getStripe();
 
-  // Reuse a still-open checkout session instead of creating duplicates.
+  // Reuse a recent, still-open bKash payment instead of creating duplicates.
   const open = await prisma.payment.findFirst({
-    where: { assessmentId, companyId, status: "PENDING", stripeSessionId: { not: null } },
+    where: { assessmentId, companyId, status: "PENDING", bkashPaymentId: { not: null } },
     orderBy: { createdAt: "desc" },
   });
-  if (open?.stripeSessionId) {
-    const existing = await stripe.checkout.sessions.retrieve(open.stripeSessionId);
-    if (existing.status === "open" && existing.url) {
+  if (open) {
+    const bkashURL = (open.rawResponse as { bkashURL?: string } | null)?.bkashURL;
+    if (bkashURL && Date.now() - open.createdAt.getTime() < REUSE_WINDOW_MS) {
       return {
         paymentId: open.id,
-        checkoutUrl: existing.url,
+        checkoutUrl: bkashURL,
         amount,
         currency: env.PAYMENT_CURRENCY,
         reused: true,
@@ -69,10 +76,14 @@ export const initiatePayment = async (companyId: string, assessmentId: string, r
     }
     await prisma.payment.updateMany({
       where: { id: open.id, status: "PENDING" },
-      data: { status: "CANCELLED", statusMessage: "Checkout session expired" },
+      data: { status: "CANCELLED", statusMessage: "Payment session expired" },
     });
   }
 
+  const company = await prisma.user.findUniqueOrThrow({
+    where: { id: companyId },
+    select: { email: true },
+  });
   const payment = await prisma.payment.create({
     data: {
       companyId,
@@ -85,34 +96,25 @@ export const initiatePayment = async (companyId: string, assessmentId: string, r
   });
 
   try {
-    const session = await stripe.checkout.sessions.create(
-      {
-        mode: "payment",
-        client_reference_id: payment.id,
-        metadata: { paymentId: payment.id, assessmentId },
-        line_items: [
-          {
-            quantity: 1,
-            price_data: {
-              currency: env.PAYMENT_CURRENCY,
-              unit_amount: Math.round(amount * 100),
-              product_data: {
-                name: `Publish assessment: ${assessment.title}`,
-                description: `${assessment.candidateSlots} candidate slot(s)`,
-              },
-            },
-          },
-        ],
-        success_url: `${env.APP_URL}/api/v1/payments/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${env.APP_URL}/api/v1/payments/cancel?payment_id=${payment.id}`,
-      },
-      { idempotencyKey: `checkout-${payment.id}` },
-    );
+    const created = await createPayment({
+      amount,
+      invoiceNumber: payment.invoiceNumber,
+      payerReference: company.email.slice(0, 50),
+      callbackURL: `${env.APP_URL}/api/v1/payments/bkash/callback`,
+    });
+    if (created.statusCode !== "0000" || !created.paymentID || !created.bkashURL) {
+      throw new ApiError(502, `bKash could not create the payment: ${created.statusMessage}`);
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.payment.update({
         where: { id: payment.id },
-        data: { stripeSessionId: session.id, status: "PENDING" },
+        data: {
+          bkashPaymentId: created.paymentID,
+          status: "PENDING",
+          payerReference: company.email,
+          rawResponse: { bkashURL: created.bkashURL, create: created } as any,
+        },
       });
       await logAudit(
         {
@@ -128,7 +130,7 @@ export const initiatePayment = async (companyId: string, assessmentId: string, r
     });
     return {
       paymentId: payment.id,
-      checkoutUrl: session.url,
+      checkoutUrl: created.bkashURL,
       amount,
       currency: env.PAYMENT_CURRENCY,
       reused: false,
@@ -136,37 +138,40 @@ export const initiatePayment = async (companyId: string, assessmentId: string, r
   } catch (e) {
     await prisma.payment.update({
       where: { id: payment.id },
-      data: { status: "FAILED", statusMessage: "Could not create checkout session" },
+      data: { status: "FAILED", statusMessage: "Could not create bKash payment" },
     });
     throw e;
   }
 };
 
 /* ------------------------------------------------------------------ */
-/* Settlement (shared by webhook, success redirect and manual refresh)   */
+/* Settlement (shared by the bKash callback and manual refresh)         */
 /* ------------------------------------------------------------------ */
 
+const isCompleted = (r: BkashPaymentResponse) =>
+  r.statusCode === "0000" && r.transactionStatus === "Completed" && !!r.trxID;
+
 /**
- * Applies a Stripe Checkout Session's state to our records. Idempotent: the guarded
- * updateMany ensures a payment is only completed (and the assessment published) once,
- * even if the webhook and the success redirect arrive concurrently.
+ * Applies a verified bKash execute/query result to our records. Idempotent: the guarded
+ * updateMany ensures a payment is completed (and the assessment published) only once, even
+ * if the callback and a manual refresh arrive concurrently.
  */
-export const settleSession = async (session: Stripe.Checkout.Session): Promise<Payment | null> => {
-  const payment = await prisma.payment.findUnique({ where: { stripeSessionId: session.id } });
-  if (!payment) return null;
+const settle = async (payment: Payment, result: BkashPaymentResponse): Promise<Payment> => {
   if (payment.status === "COMPLETED") return payment;
 
-  const paid = session.payment_status === "paid";
-  const expired = session.status === "expired";
-
-  if (paid) {
-    const expectedCents = Math.round(Number(payment.amount) * 100);
-    if (session.amount_total !== expectedCents) {
+  if (isCompleted(result)) {
+    const amountOk = Number(result.amount) === Number(payment.amount);
+    const invoiceOk = result.merchantInvoiceNumber === payment.invoiceNumber;
+    if (!amountOk || !invoiceOk) {
       await prisma.payment.update({
         where: { id: payment.id },
-        data: { status: "FAILED", statusMessage: "Amount mismatch", rawResponse: session as any },
+        data: {
+          status: "FAILED",
+          statusMessage: "Amount or invoice mismatch",
+          rawResponse: result as any,
+        },
       });
-      throw ApiError.conflict("Paid amount does not match the invoice");
+      throw ApiError.conflict("Paid amount or invoice does not match this payment");
     }
 
     await prisma.$transaction(async (tx) => {
@@ -175,17 +180,10 @@ export const settleSession = async (session: Stripe.Checkout.Session): Promise<P
         data: {
           status: "COMPLETED",
           paidAt: new Date(),
-          paymentIntentId:
-            typeof session.payment_intent === "string"
-              ? session.payment_intent
-              : session.payment_intent?.id,
-          payerReference: session.customer_details?.email ?? null,
+          trxId: result.trxID,
+          payerReference: result.customerMsisdn ?? payment.payerReference,
           statusMessage: "Payment completed",
-          rawResponse: {
-            id: session.id,
-            amount_total: session.amount_total,
-            currency: session.currency,
-          } as any,
+          rawResponse: result as any,
         },
       });
       if (claimed.count === 0) return; // someone else already settled it
@@ -203,7 +201,7 @@ export const settleSession = async (session: Stripe.Checkout.Session): Promise<P
           action: "PAYMENT_COMPLETED",
           entity: "Payment",
           entityId: payment.id,
-          after: { sessionId: session.id },
+          after: { bkashPaymentId: payment.bkashPaymentId, trxId: result.trxID },
         },
         tx,
       );
@@ -215,77 +213,78 @@ export const settleSession = async (session: Stripe.Checkout.Session): Promise<P
         tx,
       );
     });
-  } else if (expired) {
+  } else if (
+    result.transactionStatus === "Failed" ||
+    (result.statusCode && result.statusCode !== "0000")
+  ) {
     await prisma.payment.updateMany({
-      where: { id: payment.id, status: { in: ["INITIATED", "PENDING"] } },
-      data: { status: "CANCELLED", statusMessage: "Checkout session expired" },
+      where: { id: payment.id, status: { in: [...OPEN_STATES] } },
+      data: {
+        status: "FAILED",
+        statusMessage: result.statusMessage ?? "Payment failed",
+        rawResponse: result as any,
+      },
     });
   }
   return prisma.payment.findUniqueOrThrow({ where: { id: payment.id } });
 };
 
-/** Success redirect target: verifies the session with Stripe rather than trusting the URL. */
-export const handleSuccessRedirect = async (sessionId: string) => {
-  const session = await getStripe().checkout.sessions.retrieve(sessionId);
-  const payment = await settleSession(session);
-  if (!payment) throw ApiError.notFound("Payment not found for this session");
-  return {
-    paymentId: payment.id,
-    status: payment.status,
-    invoiceNumber: payment.invoiceNumber,
-    assessmentId: payment.assessmentId,
-    message: payment.status === "COMPLETED" ? "Payment successful" : "Payment not completed yet",
-  };
-};
-
-export const handleCancelRedirect = async (paymentId: string) => {
-  const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+/**
+ * bKash redirects the customer to callbackURL?paymentID=...&status=success|failure|cancel.
+ * The query string is never trusted: on "success" we execute the payment with bKash and
+ * verify amount, invoice and transaction status from the response.
+ */
+export const handleCallback = async (paymentID: string, status: string) => {
+  const payment = await prisma.payment.findUnique({ where: { bkashPaymentId: paymentID } });
   if (!payment) throw ApiError.notFound("Payment not found");
-  if (payment.status === "PENDING" || payment.status === "INITIATED") {
-    await prisma.payment.update({
-      where: { id: paymentId },
+
+  if (payment.status === "COMPLETED") {
+    return view(payment, "Payment already completed");
+  }
+
+  if (status === "cancel") {
+    await prisma.payment.updateMany({
+      where: { id: payment.id, status: { in: [...OPEN_STATES] } },
       data: { status: "CANCELLED", statusMessage: "Cancelled by user" },
     });
     await logAudit({
       actorId: payment.companyId,
       action: "PAYMENT_CANCELLED",
       entity: "Payment",
-      entityId: paymentId,
+      entityId: payment.id,
     });
+    return view(await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } }));
   }
-  return { paymentId, status: payment.status === "COMPLETED" ? "COMPLETED" : "CANCELLED" };
+
+  if (status === "failure") {
+    await prisma.payment.updateMany({
+      where: { id: payment.id, status: { in: [...OPEN_STATES] } },
+      data: { status: "FAILED", statusMessage: "Payment failed at bKash" },
+    });
+    return view(await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } }));
+  }
+
+  // status === "success": execute, falling back to a status query if execute was already done
+  let result = await executePayment(paymentID);
+  if (!isCompleted(result)) {
+    const queried = await queryPayment(paymentID);
+    if (isCompleted(queried)) result = queried;
+  }
+  return view(await settle(payment, result));
 };
 
-export const handleWebhook = async (rawBody: Buffer | undefined, signature: string | undefined) => {
-  if (!env.STRIPE_WEBHOOK_SECRET) throw ApiError.badRequest("Webhook secret not configured");
-  if (!rawBody || !signature) throw ApiError.badRequest("Missing webhook payload or signature");
-
-  let event: Stripe.Event;
-  try {
-    event = getStripe().webhooks.constructEvent(rawBody, signature, env.STRIPE_WEBHOOK_SECRET);
-  } catch {
-    throw ApiError.badRequest("Invalid webhook signature");
-  }
-
-  switch (event.type) {
-    case "checkout.session.completed":
-    case "checkout.session.async_payment_succeeded":
-    case "checkout.session.expired":
-      await settleSession(event.data.object as Stripe.Checkout.Session);
-      break;
-    case "checkout.session.async_payment_failed": {
-      const s = event.data.object as Stripe.Checkout.Session;
-      await prisma.payment.updateMany({
-        where: { stripeSessionId: s.id, status: { not: "COMPLETED" } },
-        data: { status: "FAILED", statusMessage: "Asynchronous payment failed" },
-      });
-      break;
-    }
-    default:
-      break;
-  }
-  return { received: true, type: event.type };
-};
+const view = (payment: Payment, message?: string) => ({
+  paymentId: payment.id,
+  status: payment.status,
+  invoiceNumber: payment.invoiceNumber,
+  trxId: payment.trxId,
+  assessmentId: payment.assessmentId,
+  message:
+    message ??
+    (payment.status === "COMPLETED"
+      ? "Payment successful"
+      : `Payment ${payment.status.toLowerCase()}${payment.statusMessage ? `: ${payment.statusMessage}` : ""}`),
+});
 
 /* ------------------------------------------------------------------ */
 /* Queries                                                              */
@@ -294,7 +293,7 @@ export const handleWebhook = async (rawBody: Buffer | undefined, signature: stri
 export const getPayment = async (user: NonNullable<Request["user"]>, id: string) => {
   const payment = await prisma.payment.findFirst({
     where: { id, ...(user.role === "ADMIN" ? {} : { companyId: user.id }) },
-    select: { ...publicSelect, stripeSessionId: true, paymentIntentId: true, companyId: true },
+    select: { ...publicSelect, bkashPaymentId: true, companyId: true },
   });
   if (!payment) throw ApiError.notFound("Payment not found");
   return payment;
@@ -320,11 +319,15 @@ export const listPayments = async (companyId: string, q: any) => {
   return { items, meta: buildMeta(page, limit, total) };
 };
 
+/** Re-queries bKash for the payment's state (useful if the callback never reached us). */
 export const refreshPayment = async (companyId: string, id: string) => {
   const payment = await prisma.payment.findFirst({ where: { id, companyId } });
   if (!payment) throw ApiError.notFound("Payment not found");
-  if (!payment.stripeSessionId) throw ApiError.conflict("Payment has no checkout session");
-  const session = await getStripe().checkout.sessions.retrieve(payment.stripeSessionId);
-  await settleSession(session);
+  if (!payment.bkashPaymentId) throw ApiError.conflict("Payment has no bKash payment id");
+  if (payment.status !== "COMPLETED") {
+    const result = await queryPayment(payment.bkashPaymentId);
+    // Only act on a definite outcome; an unpaid payment must stay PENDING.
+    if (isCompleted(result) || result.transactionStatus === "Failed") await settle(payment, result);
+  }
   return prisma.payment.findUniqueOrThrow({ where: { id }, select: publicSelect });
 };

@@ -11,34 +11,23 @@ export const paymentsRouter = Router();
 
 const idParam = validate(Joi.object({ id: Joi.string().uuid().required() }), "params");
 
-/* ---- Stripe-facing endpoints (no bearer token; authenticity is verified with Stripe) ---- */
+/* ---- bKash-facing endpoint (no bearer token; authenticity is verified by executing with bKash) ---- */
 
-paymentsRouter.post(
-  "/webhook",
+paymentsRouter.get(
+  "/bkash/callback",
+  validate(
+    Joi.object({
+      paymentID: Joi.string().min(5).max(100).required(),
+      status: Joi.string().valid("success", "failure", "cancel").required(),
+    }).unknown(true),
+    "query",
+  ),
   catchAsync(async (req, res) => {
-    const data = await service.handleWebhook(
-      req.rawBody,
-      req.headers["stripe-signature"] as string,
+    const data = await service.handleCallback(
+      String(req.query.paymentID),
+      String(req.query.status),
     );
-    sendResponse(res, { message: "Webhook processed", data });
-  }),
-);
-
-paymentsRouter.get(
-  "/success",
-  validate(Joi.object({ session_id: Joi.string().min(10).max(255).required() }), "query"),
-  catchAsync(async (req, res) => {
-    const data = await service.handleSuccessRedirect(String(req.query.session_id));
     sendResponse(res, { message: data.message, data });
-  }),
-);
-
-paymentsRouter.get(
-  "/cancel",
-  validate(Joi.object({ payment_id: Joi.string().uuid().required() }), "query"),
-  catchAsync(async (req, res) => {
-    const data = await service.handleCancelRedirect(String(req.query.payment_id));
-    sendResponse(res, { message: "Payment cancelled", data });
   }),
 );
 
@@ -52,7 +41,7 @@ paymentsRouter.post(
   validate(Joi.object({ assessmentId: Joi.string().uuid().required() })),
   catchAsync(async (req, res) => {
     const data = await service.initiatePayment(req.user!.id, req.body.assessmentId, req);
-    sendResponse(res, { statusCode: 201, message: "Checkout session created", data });
+    sendResponse(res, { statusCode: 201, message: "bKash payment created", data });
   }),
 );
 
@@ -94,6 +83,6 @@ paymentsRouter.post(
   idParam,
   catchAsync(async (req, res) => {
     const data = await service.refreshPayment(req.user!.id, String(req.params.id));
-    sendResponse(res, { message: "Payment status synced with Stripe", data });
+    sendResponse(res, { message: "Payment status synced with bKash", data });
   }),
 );
