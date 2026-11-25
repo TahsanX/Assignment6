@@ -206,7 +206,7 @@ async function main() {
     }
   }
 
-  // A DRAFT sample assessment (publishing requires a real Stripe payment).
+  // A DRAFT sample assessment (publishing requires a real bKash payment).
   const hasAssessment = await prisma.assessment.count({ where: { companyId: owner.id } });
   if (hasAssessment === 0) {
     const bank = await prisma.problem.findMany({
