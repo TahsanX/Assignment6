@@ -13,3 +13,14 @@ export const onboardSchema = Joi.object({
     otherwise: Joi.forbidden(),
   }),
 });
+
+export const loginSchema = Joi.object({
+  email: Joi.string().trim().email().required(),
+  password: Joi.string().required(),
+});
+
+export const registerSchema = onboardSchema.keys({
+  name: Joi.string().trim().min(2).max(100).required(),
+  email: Joi.string().trim().email().required(),
+  password: Joi.string().min(8).max(72).required(),
+});

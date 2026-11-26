@@ -3,10 +3,12 @@ import { authenticate } from "../../middlewares/auth";
 import { authLimiter } from "../../middlewares/rateLimit";
 import { validate } from "../../middlewares/validate";
 import * as controller from "./auth.controller";
-import { onboardSchema } from "./auth.validation";
+import { loginSchema, onboardSchema, registerSchema } from "./auth.validation";
 
 export const authRouter = Router();
 
+authRouter.post("/register", validate(registerSchema), controller.register);
+authRouter.post("/login", validate(loginSchema), controller.login);
 authRouter.use(authLimiter);
 authRouter.post("/onboard", authenticate, validate(onboardSchema), controller.onboard);
 authRouter.post("/refresh-token", controller.refresh);

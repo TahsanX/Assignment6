@@ -20,6 +20,28 @@ const folders: Record<string, Ep[]> = {
   ],
   Auth: [
     {
+      name: "Register (email/password)",
+      method: "POST",
+      path: "/auth/register",
+      tok: null,
+      body: {
+        name: "Rafiq Islam",
+        email: "rafiq.islam@example.com",
+        password: "Rafiq#Secure2026Pass",
+        role: "CANDIDATE",
+        headline: "Node.js developer",
+      },
+      desc: "role: COMPANY (needs companyName) or CANDIDATE. Password: 15+ characters (Clerk policy). Returns a Bearer token.",
+    },
+    {
+      name: "Login (email/password)",
+      method: "POST",
+      path: "/auth/login",
+      tok: null,
+      body: { email: "admin@codeassess.dev", password: "Admin#CodeAssess2026" },
+      desc: "Returns data.token (valid 1 hour). Put it in adminToken / companyToken / candidateToken.",
+    },
+    {
       name: "Onboard (choose COMPANY or CANDIDATE, once)",
       method: "POST",
       path: "/auth/onboard",
@@ -506,7 +528,7 @@ const collection = {
   info: {
     name: "CodeAssess API",
     description:
-      "Developer Assessment & Coding Platform. Roles: ADMIN, COMPANY, CANDIDATE. Auth: Clerk session JWT as Bearer token. Mint test tokens with `npx tsx scripts/get-test-token.ts <email>`.",
+      "Developer Assessment & Coding Platform. Roles: ADMIN, COMPANY, CANDIDATE. Auth: Clerk session JWT as Bearer token. Get tokens with POST /auth/login (email + password).",
     schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
   },
   variable: [

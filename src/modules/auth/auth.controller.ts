@@ -37,3 +37,13 @@ export const clerkWebhook = catchAsync(async (req, res) => {
   await service.handleClerkEvent(evt);
   sendResponse(res, { message: "Webhook processed" });
 });
+
+export const register = catchAsync(async (req, res) => {
+  const data = await service.register(req.body, req);
+  sendResponse(res, { statusCode: 201, message: "Registration successful", data });
+});
+
+export const login = catchAsync(async (req, res) => {
+  const data = await service.login(req.body.email, req.body.password);
+  sendResponse(res, { message: "Login successful", data });
+});

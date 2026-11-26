@@ -138,3 +138,55 @@ export const handleClerkEvent = async (evt: { type: string; data: any }) => {
     });
   }
 };
+
+/** Email/password login: Clerk checks the password, then we mint a session token. */
+export const login = async (email: string, password: string) => {
+  const found = await clerk.users.getUserList({ emailAddress: [email.toLowerCase()] });
+  const cu = found.data[0];
+  if (!cu) throw ApiError.unauthorized("Invalid email or password");
+  try {
+    await clerk.users.verifyPassword({ userId: cu.id, password });
+  } catch {
+    throw ApiError.unauthorized("Invalid email or password");
+  }
+  const user = await findOrCreateUser(cu.id);
+  if (user.status === "SUSPENDED") throw ApiError.forbidden("Account is suspended");
+  const session = await clerk.sessions.createSession({ userId: cu.id });
+  const token = await clerk.sessions.getToken(session.id, undefined, 3600);
+  return { token: token.jwt, expiresIn: 3600, user };
+};
+
+/** Creates the Clerk account (Clerk hashes the password), the local user + profile, and logs in. */
+export const register = async (
+  input: {
+    name: string;
+    email: string;
+    password: string;
+    role: Extract<Role, "COMPANY" | "CANDIDATE">;
+    companyName?: string;
+    headline?: string;
+  },
+  req: Request,
+) => {
+  const email = input.email.toLowerCase();
+  const exists = await clerk.users.getUserList({ emailAddress: [email] });
+  if (exists.data.length) throw ApiError.conflict("An account with this email already exists");
+  const [firstName, ...rest] = input.name.trim().split(/\s+/);
+  const cu = await clerk.users
+    .createUser({
+      emailAddress: [email],
+      password: input.password,
+      firstName,
+      lastName: rest.join(" ") || undefined,
+    })
+    .catch((e) => {
+      throw ApiError.badRequest(e?.errors?.[0]?.longMessage ?? "Could not create account");
+    });
+  const user = await findOrCreateUser(cu.id);
+  await onboard(
+    user.id,
+    { role: input.role, companyName: input.companyName, headline: input.headline },
+    req,
+  );
+  return login(email, input.password);
+};

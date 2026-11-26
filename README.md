@@ -79,7 +79,7 @@ State machine: `DRAFT → PENDING_PAYMENT → PUBLISHED → CLOSED` (all transit
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /auth/onboard` · `POST /auth/refresh-token` · `POST /auth/logout` · `POST /webhooks/clerk` |
+| Auth | `POST /auth/register` · `POST /auth/login` · `POST /auth/onboard` · `POST /auth/refresh-token` · `POST /auth/logout` · `POST /webhooks/clerk` |
 | Users | `GET/PATCH/DELETE /users/me` · `PUT /users/me/profile/{company,candidate}` · `POST /users/me/{avatar,resume,logo}` |
 | Problems | `POST/GET /problems` · `GET /problems/search` · `GET/PATCH/DELETE /problems/:id` |
 | Assessments | `POST/GET /assessments` · `GET/PATCH/DELETE /assessments/:id` · `POST /:id/problems` · `PUT /:id/problems/reorder` · `DELETE /:id/problems/:problemId` · `POST /:id/publish-request` · `POST /:id/close` |
@@ -107,6 +107,16 @@ npm run dev
 Scripts: `npm run lint` (Biome) · `npm run typecheck` · `npm run build` · `npm run docs:postman` · `npm run smoke`.
 
 ### Testing without a frontend
+
+`POST /api/v1/auth/login` with email + password returns a Bearer token (valid 1 hour):
+
+| Role | Email | Password |
+|---|---|---|
+| ADMIN | admin@codeassess.dev | Admin#CodeAssess2026 |
+| COMPANY | hiring@northwind-labs.dev | CodeAssess#2026 |
+| CANDIDATE | nusrat.jahan@example.com | CodeAssess#2026 |
+
+New accounts: `POST /api/v1/auth/register` (Clerk requires 15+ character passwords). Google login goes through Clerk.
 
 ```bash
 TOKEN=$(npx tsx scripts/get-test-token.ts hiring@northwind-labs.dev)   # Clerk session JWT
