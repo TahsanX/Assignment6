@@ -49,9 +49,19 @@ paymentsRouter.post(
   authenticate,
   authorize("COMPANY"),
   paymentLimiter,
-  validate(Joi.object({ assessmentId: Joi.string().uuid().required() })),
+  validate(
+    Joi.object({
+      assessmentId: Joi.string().uuid().required(),
+      redirect: Joi.string().valid("api", "client").default("api"),
+    }),
+  ),
   catchAsync(async (req, res) => {
-    const data = await service.initiatePayment(req.user!.id, req.body.assessmentId, req);
+    const data = await service.initiatePayment(
+      req.user!.id,
+      req.body.assessmentId,
+      req,
+      req.body.redirect === "client",
+    );
     sendResponse(res, { statusCode: 201, message: "Checkout session created", data });
   }),
 );

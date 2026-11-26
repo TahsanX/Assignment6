@@ -33,7 +33,12 @@ const invoiceNo = () =>
 /* Initiate                                                             */
 /* ------------------------------------------------------------------ */
 
-export const initiatePayment = async (companyId: string, assessmentId: string, req: Request) => {
+export const initiatePayment = async (
+  companyId: string,
+  assessmentId: string,
+  req: Request,
+  toClient = false,
+) => {
   const assessment = await prisma.assessment.findFirst({
     where: { id: assessmentId, companyId, deletedAt: null },
     select: { id: true, title: true, status: true, candidateSlots: true },
@@ -103,8 +108,12 @@ export const initiatePayment = async (companyId: string, assessmentId: string, r
             },
           },
         ],
-        success_url: `${env.APP_URL}/api/v1/payments/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${env.APP_URL}/api/v1/payments/cancel?payment_id=${payment.id}`,
+        success_url: toClient
+          ? `${env.CLIENT_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`
+          : `${env.APP_URL}/api/v1/payments/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: toClient
+          ? `${env.CLIENT_URL}/payment/cancel?payment_id=${payment.id}`
+          : `${env.APP_URL}/api/v1/payments/cancel?payment_id=${payment.id}`,
       },
       { idempotencyKey: `checkout-${payment.id}` },
     );
