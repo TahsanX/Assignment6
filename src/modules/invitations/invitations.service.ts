@@ -110,11 +110,12 @@ export const createInvitations = async (
     }),
   );
 
-  // Dev/test convenience: tokens are exposed only outside production (no mailbox needed).
+  // Testing/demo convenience: tokens are returned outside production, or when
+  // EXPOSE_INVITE_TOKENS=true (e.g. a demo deployment without real candidate mailboxes).
   return {
     invited: issued.map((i) => ({
       email: i.email,
-      ...(env.NODE_ENV !== "production" && { token: i.token }),
+      ...((env.NODE_ENV !== "production" || env.EXPOSE_INVITE_TOKENS) && { token: i.token }),
     })),
     skipped,
     slotsRemaining: Math.max(0, assessment.candidateSlots - (await countUsed(assessmentId))),

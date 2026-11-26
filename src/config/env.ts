@@ -29,6 +29,7 @@ const schema = Joi.object({
   PRICE_PER_CANDIDATE_SLOT: Joi.number().positive().default(2),
   ADMIN_EMAIL: Joi.string().email().default("admin@codeassess.dev"),
   ADMIN_PASSWORD: Joi.string().default("ChangeMe123!"),
+  EXPOSE_INVITE_TOKENS: Joi.boolean().default(false),
 }).unknown(true);
 
 const { value, error } = schema.validate(process.env, { abortEarly: false });
@@ -60,6 +61,7 @@ export const env = value as {
   PRICE_PER_CANDIDATE_SLOT: number;
   ADMIN_EMAIL: string;
   ADMIN_PASSWORD: string;
+  EXPOSE_INVITE_TOKENS: boolean;
 };
 
 export const isProd = env.NODE_ENV === "production";
