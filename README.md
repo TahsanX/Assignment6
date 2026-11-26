@@ -75,24 +75,138 @@ State machine: `DRAFT → PENDING_PAYMENT → PUBLISHED → CLOSED` (all transit
   CSV formula-injection guard, Stripe/Clerk webhook signature verification, hashed invitation tokens.
 - **Response format:** `{ success, message, data[, meta] }` / `{ success:false, message, errors[] }`.
 
-## API overview (`/api/v1`)
+## API endpoints (`/api/v1`)
 
-| Area | Endpoints |
-|---|---|
-| Auth | `POST /auth/register` · `POST /auth/login` · `POST /auth/onboard` · `POST /auth/refresh-token` · `POST /auth/logout` · `POST /webhooks/clerk` |
-| Users | `GET/PATCH/DELETE /users/me` · `PUT /users/me/profile/{company,candidate}` · `POST /users/me/{avatar,resume,logo}` |
-| Problems | `POST/GET /problems` · `GET /problems/search` · `GET/PATCH/DELETE /problems/:id` |
-| Assessments | `POST/GET /assessments` · `GET/PATCH/DELETE /assessments/:id` · `POST /:id/problems` · `PUT /:id/problems/reorder` · `DELETE /:id/problems/:problemId` · `POST /:id/publish-request` · `POST /:id/close` |
-| Invitations | `POST/GET /assessments/:id/invitations` · `DELETE /invitations/:id` · `POST /invitations/accept` · `GET /invitations/mine` |
-| Attempts | `POST /assessments/:id/attempts` · `GET /attempts/:id` · `PUT /attempts/:id/answers/:problemId` · `POST /attempts/:id/events` · `POST /attempts/:id/submit` · `GET /attempts/mine` · `GET /attempts/:id/result` |
-| Evaluation | `GET /assessments/:id/submissions` · `GET /submissions/:attemptId` · `PATCH /answers/:id/evaluate` · `POST /submissions/:attemptId/finalize` · `POST /assessments/:id/release-results` |
-| Reports | `GET /assessments/:id/report` · `GET /assessments/:id/report/export` (CSV) |
-| Payments | `POST /payments/initiate` · `POST /payments/webhook` · `GET /payments/success` · `GET /payments/cancel` · `GET /payments` · `GET /payments/:id` · `POST /payments/:id/refresh` |
-| Notifications | `GET /notifications` · `PATCH /notifications/:id/read` |
-| Admin | `GET /admin/users` · `PATCH /admin/users/:id/{role,status}` · `GET /admin/assessments` · `PATCH /admin/assessments/:id/moderate` · `GET /admin/payments` · `GET /admin/dashboard-stats` · `GET /admin/audit-logs` |
-| Public | `GET /health` · `GET /api/v1/public/stats` |
+> All authenticated endpoints require `Authorization: Bearer <token>`. Obtain a token via `POST /auth/login`.
+> Response envelope: `{ success, message, data[, meta] }` or `{ success: false, message, errors[] }`.
 
-List endpoints support `page`, `limit`, filters, `q` search and `sortBy`/`order`. Full examples: `postman/collection.json`.
+### Auth
+
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| `POST` | `/auth/register` | No | — | Register with name, email, password (15+ chars), role |
+| `POST` | `/auth/login` | No | — | Login with email + password; returns Bearer token (1 hr) |
+| `POST` | `/auth/onboard` | Yes | any | Set role + create profile (one-time, after Google sign-in) |
+| `POST` | `/auth/refresh-token` | Yes | any | Mint a new Clerk session token |
+| `POST` | `/auth/logout` | Yes | any | Revoke current session |
+| `POST` | `/webhooks/clerk` | Svix | — | Clerk user sync webhook (svix-verified) |
+
+### Users & Profiles
+
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| `GET` | `/users/me` | Yes | any | Get own user + profile |
+| `PATCH` | `/users/me` | Yes | any | Update name |
+| `DELETE` | `/users/me` | Yes | any | Soft-delete own account |
+| `PUT` | `/users/me/profile/company` | Yes | COMPANY | Upsert company profile (name, website, description) |
+| `PUT` | `/users/me/profile/candidate` | Yes | CANDIDATE | Upsert candidate profile (skills, github, headline) |
+| `POST` | `/users/me/avatar` | Yes | CANDIDATE | Upload avatar image (Cloudinary) |
+| `POST` | `/users/me/resume` | Yes | CANDIDATE | Upload resume PDF (Cloudinary) |
+| `POST` | `/users/me/logo` | Yes | COMPANY | Upload company logo (Cloudinary) |
+
+### Problems
+
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| `POST` | `/problems` | Yes | COMPANY | Create problem (MCQ / WRITTEN / CODING) |
+| `GET` | `/problems` | Yes | COMPANY | List own problems (`page`, `limit`, `type`, `difficulty`, `tag`, `q`, `sortBy`, `order`) |
+| `GET` | `/problems/search` | Yes | COMPANY | Search problems by keyword (`q`) |
+| `GET` | `/problems/:id` | Yes | COMPANY | Get single problem |
+| `PATCH` | `/problems/:id` | Yes | COMPANY | Update problem |
+| `DELETE` | `/problems/:id` | Yes | COMPANY | Soft-delete problem |
+
+### Assessments
+
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| `POST` | `/assessments` | Yes | COMPANY | Create assessment |
+| `GET` | `/assessments` | Yes | COMPANY / CANDIDATE | List assessments (company: own; candidate: invited; `page`, `limit`, `status`, `q`, `sortBy`) |
+| `GET` | `/assessments/:id` | Yes | COMPANY / CANDIDATE | Get single assessment |
+| `PATCH` | `/assessments/:id` | Yes | COMPANY | Update assessment (DRAFT only) |
+| `DELETE` | `/assessments/:id` | Yes | COMPANY | Soft-delete assessment |
+| `POST` | `/assessments/:id/problems` | Yes | COMPANY | Attach problems to assessment |
+| `PUT` | `/assessments/:id/problems/reorder` | Yes | COMPANY | Reorder attached problems |
+| `DELETE` | `/assessments/:id/problems/:problemId` | Yes | COMPANY | Remove problem from assessment |
+| `POST` | `/assessments/:id/publish-request` | Yes | COMPANY | Move to PENDING_PAYMENT (requires ≥1 problem) |
+| `POST` | `/assessments/:id/close` | Yes | COMPANY | Close published assessment |
+
+### Invitations
+
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| `POST` | `/assessments/:id/invitations` | Yes | COMPANY | Bulk-invite candidates (up to 100 emails, capped by slots) |
+| `GET` | `/assessments/:id/invitations` | Yes | COMPANY | List invitations for an assessment |
+| `DELETE` | `/invitations/:id` | Yes | COMPANY | Revoke invitation |
+| `POST` | `/invitations/accept` | Yes | CANDIDATE | Accept invitation by token |
+| `GET` | `/invitations/mine` | Yes | CANDIDATE | List own invitations |
+
+### Attempts
+
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| `POST` | `/assessments/:id/attempts` | Yes | CANDIDATE | Start attempt (locked transaction; one active per candidate) |
+| `GET` | `/attempts/mine` | Yes | CANDIDATE | List own attempts |
+| `GET` | `/attempts/:id` | Yes | CANDIDATE | Get attempt + questions (no correct answers) + time left |
+| `GET` | `/attempts/:id/result` | Yes | CANDIDATE | Get scored result (after company releases) |
+| `PUT` | `/attempts/:id/answers/:problemId` | Yes | CANDIDATE | Autosave answer |
+| `POST` | `/attempts/:id/events` | Yes | CANDIDATE | Log anti-cheat event (tab switch, etc.) |
+| `POST` | `/attempts/:id/submit` | Yes | CANDIDATE | Submit attempt |
+
+### Evaluation
+
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| `GET` | `/assessments/:id/submissions` | Yes | COMPANY | List submissions for an assessment (`status`, `page`, `limit`) |
+| `GET` | `/submissions/:attemptId` | Yes | COMPANY | Get full submission with all answers |
+| `PATCH` | `/answers/:id/evaluate` | Yes | COMPANY | Score a written/coding answer (manualScore, feedback) |
+| `POST` | `/submissions/:attemptId/finalize` | Yes | COMPANY | Finalize evaluation (marks attempt EVALUATED) |
+| `POST` | `/assessments/:id/release-results` | Yes | COMPANY | Release results to candidates |
+
+### Reports
+
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| `GET` | `/assessments/:id/report` | Yes | COMPANY | Analytics: avg score, pass rate, per-problem stats, leaderboard (Redis-cached) |
+| `GET` | `/assessments/:id/report/export` | Yes | COMPANY | Export report as CSV (formula-injection safe) |
+
+### Payments
+
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| `POST` | `/payments/initiate` | Yes | COMPANY | Create Stripe Checkout session for a PENDING_PAYMENT assessment |
+| `POST` | `/payments/webhook` | Stripe | — | Stripe signed webhook (checkout.session.completed) |
+| `GET` | `/payments/success` | No | — | Stripe success redirect; re-verifies session and publishes assessment |
+| `GET` | `/payments/cancel` | No | — | Stripe cancel redirect; marks payment CANCELLED |
+| `GET` | `/payments` | Yes | COMPANY | List own payments (`page`, `limit`, `status`, `assessmentId`) |
+| `GET` | `/payments/:id` | Yes | COMPANY / ADMIN | Get single payment |
+| `POST` | `/payments/:id/refresh` | Yes | COMPANY | Re-sync payment status from Stripe |
+
+### Notifications
+
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| `GET` | `/notifications` | Yes | any | List notifications (`page`, `limit`, `unread`) |
+| `PATCH` | `/notifications/:id/read` | Yes | any | Mark notification as read |
+
+### Admin
+
+| Method | Endpoint | Auth | Role | Description |
+|---|---|---|---|---|
+| `GET` | `/admin/users` | Yes | ADMIN | List users (`role`, `status`, `q`, `includeDeleted`, `sortBy`, `order`) |
+| `PATCH` | `/admin/users/:id/role` | Yes | ADMIN | Change user role |
+| `PATCH` | `/admin/users/:id/status` | Yes | ADMIN | Suspend or activate user |
+| `GET` | `/admin/assessments` | Yes | ADMIN | List all assessments (`status`, `companyId`, `q`, `includeDeleted`) |
+| `PATCH` | `/admin/assessments/:id/moderate` | Yes | ADMIN | Moderate assessment (TAKEDOWN / REMOVE + note) |
+| `GET` | `/admin/payments` | Yes | ADMIN | List all payments (`status`, `companyId`) |
+| `GET` | `/admin/dashboard-stats` | Yes | ADMIN | Platform-wide stats (cached) |
+| `GET` | `/admin/audit-logs` | Yes | ADMIN | Audit logs (`action`, `entity`, `actorId`, `from`, `to`) |
+
+### Public
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | No | Health check |
+| `GET` | `/public/stats` | No | Public platform counters (Redis-cached) |
 
 ## Local setup
 
