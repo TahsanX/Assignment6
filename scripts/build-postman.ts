@@ -510,7 +510,7 @@ const collection = {
     schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
   },
   variable: [
-    { key: "baseUrl", value: "http://localhost:5000" },
+    { key: "baseUrl", value: "https://codeassess-backend.vercel.app" },
     ...["admin", "company", "candidate"].map((r) => ({ key: `${r}Token`, value: "" })),
     ...[
       "problemId",
