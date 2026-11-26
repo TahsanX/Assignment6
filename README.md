@@ -7,11 +7,11 @@ attempt, and see results once released. Admins moderate the platform.
 ```
 Project Name    : CodeAssess - Developer Assessment Platform (Backend)
 Backend Repo    : https://github.com/TahsanX/Assignment6
-Live API        : <fill after deploy>
+Live API        : https://codeassess-backend.vercel.app (health: /health, API base: /api/v1)
 API Docs        : postman/collection.json (import into Postman) / <published docs link>
 Demo Video      : <fill>
 Admin Email     : admin@codeassess.dev
-Admin Password  : <demo password set via ADMIN_PASSWORD at seed time>
+Admin Password  : Admin#CodeAssess2026
 ```
 
 ## Stack
