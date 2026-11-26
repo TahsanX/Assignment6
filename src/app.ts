@@ -18,7 +18,8 @@ export const createApp = (): Express => {
     cors({
       origin: (origin, cb) => {
         if (!origin || origins.includes("*") || origins.includes(origin)) return cb(null, true);
-        return cb(new Error("Not allowed by CORS"));
+        // Unknown origin: omit CORS headers (browser blocks it) instead of throwing a 500.
+        return cb(null, false);
       },
       credentials: true,
     }),
