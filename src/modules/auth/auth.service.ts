@@ -139,6 +139,21 @@ export const handleClerkEvent = async (evt: { type: string; data: any }) => {
   }
 };
 
+/**
+ * OAuth (Google via Clerk): the browser's Clerk token lives ~60s, so verify it and mint a
+ * 1-hour token for the same session, matching what email/password login returns.
+ */
+export const exchangeOAuthToken = async (browserToken: string) => {
+  const payload = (await verifySessionToken(browserToken)) as { sid?: string; sub?: string };
+  if (!payload.sid || !payload.sub) throw ApiError.badRequest("Token has no session");
+  const session = await clerk.sessions.getSession(payload.sid);
+  if (session.status !== "active") throw ApiError.unauthorized("Session is no longer active");
+  const user = await findOrCreateUser(payload.sub);
+  if (user.status === "SUSPENDED") throw ApiError.forbidden("Account is suspended");
+  const token = await clerk.sessions.getToken(payload.sid, undefined, 3600);
+  return { token: token.jwt, expiresIn: 3600, user };
+};
+
 /** Email/password login: Clerk checks the password, then we mint a session token. */
 export const login = async (email: string, password: string) => {
   const found = await clerk.users.getUserList({ emailAddress: [email.toLowerCase()] });

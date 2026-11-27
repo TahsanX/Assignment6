@@ -43,6 +43,13 @@ export const register = catchAsync(async (req, res) => {
   sendResponse(res, { statusCode: 201, message: "Registration successful", data });
 });
 
+export const oauthExchange = catchAsync(async (req, res) => {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) throw ApiError.unauthorized("Missing Bearer token");
+  const data = await service.exchangeOAuthToken(header.slice(7).trim());
+  sendResponse(res, { message: "Login successful", data });
+});
+
 export const login = catchAsync(async (req, res) => {
   const data = await service.login(req.body.email, req.body.password);
   sendResponse(res, { message: "Login successful", data });
