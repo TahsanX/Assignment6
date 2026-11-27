@@ -16,22 +16,42 @@ export const sendEmail = async (to: string, subject: string, title: string, body
     console.warn(`[mailer] RESEND_API_KEY not set, skipping email "${subject}" to ${to}`);
     return false;
   }
-  try {
-    const { error } = await resend.emails.send({
-      from: env.EMAIL_FROM,
-      to,
-      subject,
-      html: layout(title, bodyHtml),
-    });
-    if (error) {
-      console.error("[mailer] send failed:", error);
-      return false;
+  // Resend allows ~2 requests/second; back off and retry on rate-limit or transient errors.
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const { error } = await resend.emails.send({
+        from: env.EMAIL_FROM,
+        to,
+        subject,
+        html: layout(title, bodyHtml),
+      });
+      if (!error) return true;
+      const retryable =
+        error.name === "rate_limit_exceeded" ||
+        error.name === "application_error" ||
+        error.name === "internal_server_error";
+      console.error(`[mailer] send to ${to} failed (try ${attempt}):`, error.name, error.message);
+      if (!retryable) return false;
+    } catch (e) {
+      console.error(`[mailer] send to ${to} errored (try ${attempt}):`, e);
     }
-    return true;
-  } catch (e) {
-    console.error("[mailer] send error:", e);
-    return false;
+    await sleep(600 * attempt);
   }
+  return false;
+};
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Sends many emails one after another, spaced under Resend's rate limit. */
+export const sendEmailsSequentially = async (
+  items: { to: string; subject: string; title: string; body: string }[],
+) => {
+  const results: boolean[] = [];
+  for (const [i, m] of items.entries()) {
+    if (i > 0) await sleep(550);
+    results.push(await sendEmail(m.to, m.subject, m.title, m.body));
+  }
+  return results;
 };
 
 export const invitationEmail = (opts: {

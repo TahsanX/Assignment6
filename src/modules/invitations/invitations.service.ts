@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { Request } from "express";
 import { env } from "../../config/env";
-import { invitationEmail, sendEmail } from "../../lib/mailer";
+import { invitationEmail, sendEmailsSequentially } from "../../lib/mailer";
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/ApiError";
 import { buildMeta, getPagination } from "../../utils/pagination";
@@ -97,7 +97,7 @@ export const createInvitations = async (
 
   const companyName = assessment.company.companyProfile?.companyName ?? assessment.company.name;
   // Emails go out after commit; failures never roll back invitations.
-  await Promise.all(
+  const sent = await sendEmailsSequentially(
     issued.map(({ email, token }) => {
       const mail = invitationEmail({
         companyName,
@@ -106,15 +106,16 @@ export const createInvitations = async (
         link: `${env.CLIENT_URL}/invitations/accept?token=${token}`,
         expiresAt,
       });
-      return sendEmail(email, mail.subject, mail.title, mail.body);
+      return { to: email, ...mail };
     }),
   );
 
   // Testing/demo convenience: tokens are returned outside production, or when
   // EXPOSE_INVITE_TOKENS=true (e.g. a demo deployment without real candidate mailboxes).
   return {
-    invited: issued.map((i) => ({
+    invited: issued.map((i, idx) => ({
       email: i.email,
+      emailSent: sent[idx],
       ...((env.NODE_ENV !== "production" || env.EXPOSE_INVITE_TOKENS) && { token: i.token }),
     })),
     skipped,
